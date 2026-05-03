@@ -64,13 +64,11 @@ struct SongRow: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            // Track number / playing indicator
             ZStack {
                 if isPlaying {
                     Image(systemName: "waveform")
                         .font(.system(size: 14))
                         .foregroundColor(.blue)
-                        .symbolEffect(.variableColor.iterative, isActive: true)
                 } else if isCurrent {
                     Image(systemName: "play.fill")
                         .font(.system(size: 12))
@@ -83,7 +81,6 @@ struct SongRow: View {
             }
             .frame(width: 24)
 
-            // Artwork or placeholder
             Group {
                 if let art = song.artwork {
                     Image(uiImage: art)
@@ -99,7 +96,6 @@ struct SongRow: View {
             .background(Color(.tertiarySystemBackground))
             .clipShape(RoundedRectangle(cornerRadius: 6))
 
-            // Title + artist
             VStack(alignment: .leading, spacing: 3) {
                 Text(song.title)
                     .font(.system(size: 15, weight: isCurrent ? .semibold : .regular))
@@ -113,7 +109,6 @@ struct SongRow: View {
 
             Spacer()
 
-            // Duration
             Text(song.durationFormatted)
                 .font(.system(size: 13, design: .monospaced))
                 .foregroundColor(.secondary)
