@@ -19,11 +19,11 @@ workflows:
           include: true
 
     scripts:
-      - name: Show environment
+      - name: Show available simulators
         script: |
           xcodebuild -version
-          echo "Available simulators:"
-          xcodebuild -showsdks | grep -i sim
+          echo "Available iOS Simulators:"
+          xcrun simctl list devices available | grep -i iphone
 
       - name: Build for iOS Simulator (no signing)
         script: |
@@ -31,8 +31,9 @@ workflows:
             -project HFPPlayer.xcodeproj \
             -scheme HFPPlayer \
             -sdk iphonesimulator \
-            -destination 'platform=iOS Simulator,name=iPhone 15' \
+            -destination 'generic/platform=iOS Simulator' \
             -configuration Debug \
+            IPHONEOS_DEPLOYMENT_TARGET=15.0 \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGN_IDENTITY="" \
             SWIFT_TREAT_WARNINGS_AS_ERRORS=NO \
@@ -70,15 +71,19 @@ workflows:
             -sdk iphoneos \
             -configuration Release \
             -archivePath build/HFPPlayer.xcarchive \
+            IPHONEOS_DEPLOYMENT_TARGET=15.0 \
             PRODUCT_BUNDLE_IDENTIFIER="$BUNDLE_ID"
+
       - name: Export IPA
         script: |
           xcodebuild -exportArchive \
             -archivePath build/HFPPlayer.xcarchive \
             -exportOptionsPlist ExportOptions.plist \
             -exportPath build/ipa
+
     artifacts:
       - build/ipa/*.ipa
+      - build/HFPPlayer.xcarchive
 
   ios-appstore:
     name: HFPPlayer – App Store / TestFlight
@@ -109,25 +114,19 @@ workflows:
             -sdk iphoneos \
             -configuration Release \
             -archivePath build/HFPPlayer.xcarchive \
+            IPHONEOS_DEPLOYMENT_TARGET=15.0 \
             PRODUCT_BUNDLE_IDENTIFIER="$BUNDLE_ID"
+
       - name: Export IPA
         script: |
-          cat > /tmp/ExportAS.plist << PLIST
-          <?xml version="1.0" encoding="UTF-8"?>
-          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-          <plist version="1.0"><dict>
-            <key>method</key><string>app-store</string>
-            <key>uploadBitcode</key><false/>
-            <key>uploadSymbols</key><true/>
-            <key>signingStyle</key><string>automatic</string>
-          </dict></plist>
-          PLIST
           xcodebuild -exportArchive \
             -archivePath build/HFPPlayer.xcarchive \
-            -exportOptionsPlist /tmp/ExportAS.plist \
+            -exportOptionsPlist ExportOptions.plist \
             -exportPath build/ipa
+
     artifacts:
       - build/ipa/*.ipa
+
     publishing:
       app_store_connect:
         api_key: $APP_STORE_CONNECT_PRIVATE_KEY
