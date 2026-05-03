@@ -1,0 +1,136 @@
+workflows:
+
+  ios-simulator-build:
+    name: HFPPlayer – Simulator Build (no signing)
+    max_build_duration: 30
+    instance_type: mac_mini_m2
+
+    environment:
+      xcode: latest
+
+    triggering:
+      events:
+        - push
+        - pull_request
+      branch_patterns:
+        - pattern: main
+          include: true
+        - pattern: develop
+          include: true
+
+    scripts:
+      - name: Show repo structure
+        script: |
+          echo "PWD: $(pwd)"
+          find . -maxdepth 3 -not -path '*/.git/*' | sort
+          echo "--- xcodeproj ---"
+          find . -name "*.xcodeproj" -maxdepth 3
+
+      - name: Build for simulator (no signing required)
+        script: |
+          xcodebuild build \
+            -project HFPPlayer.xcodeproj \
+            -scheme HFPPlayer \
+            -destination 'generic/platform=iOS Simulator' \
+            -configuration Debug \
+            CODE_SIGNING_ALLOWED=NO \
+            SWIFT_TREAT_WARNINGS_AS_ERRORS=NO \
+            | xcpretty --color && exit ${PIPESTATUS[0]}
+
+    artifacts:
+      - /tmp/xcodebuild_logs/*.log
+
+  ios-adhoc:
+    name: HFPPlayer – Ad Hoc IPA
+    max_build_duration: 60
+    instance_type: mac_mini_m2
+
+    environment:
+      ios_signing:
+        distribution_type: ad_hoc
+        bundle_identifier: com.hfpplayer.app
+      vars:
+        BUNDLE_ID: com.hfpplayer.app
+      xcode: latest
+
+    triggering:
+      events:
+        - push
+      branch_patterns:
+        - pattern: main
+          include: true
+
+    scripts:
+      - name: Archive
+        script: |
+          xcodebuild archive \
+            -project HFPPlayer.xcodeproj \
+            -scheme HFPPlayer \
+            -configuration Release \
+            -archivePath build/HFPPlayer.xcarchive \
+            -destination 'generic/platform=iOS' \
+            PRODUCT_BUNDLE_IDENTIFIER="$BUNDLE_ID"
+      - name: Export IPA
+        script: |
+          xcodebuild -exportArchive \
+            -archivePath build/HFPPlayer.xcarchive \
+            -exportOptionsPlist ExportOptions.plist \
+            -exportPath build/ipa
+    artifacts:
+      - build/ipa/*.ipa
+
+  ios-appstore:
+    name: HFPPlayer – App Store / TestFlight
+    max_build_duration: 60
+    instance_type: mac_mini_m2
+
+    environment:
+      ios_signing:
+        distribution_type: app_store
+        bundle_identifier: com.hfpplayer.app
+      vars:
+        BUNDLE_ID: com.hfpplayer.app
+      xcode: latest
+
+    triggering:
+      events:
+        - tag
+      tag_patterns:
+        - pattern: 'v*'
+          include: true
+
+    scripts:
+      - name: Archive
+        script: |
+          xcodebuild archive \
+            -project HFPPlayer.xcodeproj \
+            -scheme HFPPlayer \
+            -configuration Release \
+            -archivePath build/HFPPlayer.xcarchive \
+            -destination 'generic/platform=iOS' \
+            PRODUCT_BUNDLE_IDENTIFIER="$BUNDLE_ID"
+      - name: Export IPA
+        script: |
+          cat > /tmp/ExportAS.plist << PLIST
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0"><dict>
+            <key>method</key><string>app-store</string>
+            <key>uploadBitcode</key><false/>
+            <key>uploadSymbols</key><true/>
+            <key>signingStyle</key><string>automatic</string>
+          </dict></plist>
+          PLIST
+          xcodebuild -exportArchive \
+            -archivePath build/HFPPlayer.xcarchive \
+            -exportOptionsPlist /tmp/ExportAS.plist \
+            -exportPath build/ipa
+    artifacts:
+      - build/ipa/*.ipa
+    publishing:
+      app_store_connect:
+        api_key: $APP_STORE_CONNECT_PRIVATE_KEY
+        key_id: $APP_STORE_CONNECT_KEY_IDENTIFIER
+        issuer_id: $APP_STORE_CONNECT_ISSUER_ID
+        submit_to_testflight: true
+        submit_to_app_store: false
