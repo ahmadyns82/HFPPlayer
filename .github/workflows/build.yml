@@ -1,26 +1,86 @@
-name: Build & Lint
+name: Build IPA
 
 on:
   push:
-    branches: [ main, develop ]
-  pull_request:
     branches: [ main ]
+  workflow_dispatch:
 
 jobs:
   build:
-    name: Xcode Build (iOS 15+)
     runs-on: macos-14
+
     steps:
       - uses: actions/checkout@v4
+
       - name: Select Xcode
         run: sudo xcode-select -s /Applications/Xcode_15.4.app
-      - name: Build for iOS Simulator
+
+      - name: Create self-signed certificate
+        run: |
+          # Create a self-signed cert for signing
+          openssl req -x509 -newkey rsa:2048 -keyout key.pem -out cert.pem \
+            -days 365 -nodes \
+            -subj "/CN=HFPPlayer/O=HFPPlayer/C=US"
+
+          # Convert to p12
+          openssl pkcs12 -export \
+            -inkey key.pem \
+            -in cert.pem \
+            -out cert.p12 \
+            -passout pass:password123 \
+            -name "HFPPlayer"
+
+          # Create keychain
+          security create-keychain -p password123 build.keychain
+          security default-keychain -s build.keychain
+          security unlock-keychain -p password123 build.keychain
+          security import cert.p12 \
+            -k build.keychain \
+            -P password123 \
+            -T /usr/bin/codesign
+          security set-key-partition-list \
+            -S apple-tool:,apple: \
+            -s -k password123 build.keychain
+
+      - name: Build for simulator (verify code compiles)
         run: |
           xcodebuild build \
             -project HFPPlayer.xcodeproj \
             -scheme HFPPlayer \
             -sdk iphonesimulator \
-            -destination 'platform=iOS Simulator,name=iPhone 15' \
-            -configuration Debug \
+            -destination 'generic/platform=iOS Simulator' \
+            -configuration Release \
             CODE_SIGNING_ALLOWED=NO \
             | xcpretty || true
+
+      - name: Archive
+        run: |
+          xcodebuild archive \
+            -project HFPPlayer.xcodeproj \
+            -scheme HFPPlayer \
+            -sdk iphoneos \
+            -configuration Release \
+            -archivePath $PWD/build/HFPPlayer.xcarchive \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO \
+            | xcpretty
+
+      - name: Export unsigned IPA
+        run: |
+          mkdir -p build/ipa
+          cp -r build/HFPPlayer.xcarchive/Products/Applications/HFPPlayer.app \
+            build/ipa/HFPPlayer.app
+          cd build/ipa
+          mkdir Payload
+          cp -r HFPPlayer.app Payload/
+          zip -r HFPPlayer.ipa Payload/
+          echo "IPA created!"
+          ls -lh HFPPlayer.ipa
+
+      - name: Upload IPA as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: HFPPlayer-IPA
+          path: build/ipa/HFPPlayer.ipa
+          retention-days: 7
