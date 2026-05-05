@@ -16,10 +16,11 @@ final class AudioSessionManager: ObservableObject {
 
     func configureForMusic() {
         do {
+            try session.setActive(false, options: .notifyOthersOnDeactivation)
             try session.setCategory(
                 .playback,
                 mode: .default,
-                options: [.allowBluetoothA2DP]
+                options: [.allowBluetoothA2DP, .allowAirPlay]
             )
             try session.setPreferredSampleRate(44100)
             try session.setPreferredIOBufferDuration(0.005)
@@ -33,16 +34,31 @@ final class AudioSessionManager: ObservableObject {
 
     func configureForHFP() {
         do {
+            // Deactivate first to force route change
+            try session.setActive(false, options: .notifyOthersOnDeactivation)
+
             try session.setCategory(
                 .playAndRecord,
                 mode: .voiceChat,
-                options: [.allowBluetoothHFP, .defaultToSpeaker]
+                options: [
+                    .allowBluetoothHFP,
+                    .allowBluetooth,
+                    .defaultToSpeaker
+                ]
             )
             try session.setPreferredSampleRate(16000)
             try session.setActive(true)
-            try session.overrideOutputAudioPort(.speaker)
+
+            // Force output to bluetooth if available
+            let outputs = session.currentRoute.outputs
+            let hasHFP = outputs.contains { $0.portType == .bluetoothHFP }
+            if !hasHFP {
+                try session.overrideOutputAudioPort(.none)
+            }
+
             isHFPActive = true
             updateRouteDescription()
+            print("HFP route: \(currentRoute)")
         } catch {
             print("AudioSession HFP config error: \(error)")
         }
@@ -79,6 +95,8 @@ final class AudioSessionManager: ObservableObject {
     }
 
     deinit {
-        if let obs = routeObserver { NotificationCenter.default.removeObserver(obs) }
+        if let obs = routeObserver {
+            NotificationCenter.default.removeObserver(obs)
+        }
     }
 }
