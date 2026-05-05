@@ -37,6 +37,41 @@ workflows:
       xcode: latest
 
     scripts:
-      - name: Show repo structure
+      - name: Build iOS archive
         script: |
-          find . -not -p
+          xcodebuild \
+            -project HFPPlayer.xcodeproj \
+            -scheme HFPPlayer \
+            -configuration Release \
+            -sdk iphoneos \
+            -archivePath build/HFPPlayer.xcarchive \
+            archive \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            DEVELOPMENT_TEAM="" \
+            IPHONEOS_DEPLOYMENT_TARGET=15.0
+
+      - name: Package IPA
+        script: |
+          APP=$(find build/HFPPlayer.xcarchive -name "*.app" | head -1)
+          echo "App: $APP"
+          /usr/libexec/PlistBuddy -c "Set :MinimumOSVersion 15.0" "$APP/Info.plist"
+          vtool -set-build-version ios 15.0 15.0 \
+            -replace -output "$APP/HFPPlayer.patched" "$APP/HFPPlayer" 2>/dev/null && \
+            mv "$APP/HFPPlayer.patched" "$APP/HFPPlayer" || true
+          mkdir -p build/Payload
+          cp -r "$APP" build/Payload/HFPPlayer.app
+          cd build && zip -r HFPPlayer.ipa Payload/
+          ls -lh HFPPlayer.ipa
+
+    artifacts:
+      - build/HFPPlayer.ipa
+
+    publishing:
+      email:
+        recipients:
+          - ahmad.yns@hotmail.com
+        notify:
+          success: true
+          failure: true
