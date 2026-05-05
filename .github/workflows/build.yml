@@ -1,77 +1,48 @@
-workflows:
+name: Build IPA
 
-  ios-simulator-build:
-    name: HFPPlayer – Simulator Build (no signing)
-    max_build_duration: 30
-    instance_type: mac_mini_m2
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
 
-    environment:
-      xcode: latest
+jobs:
+  build:
+    runs-on: macos-14
 
-    triggering:
-      events:
-        - push
-        - pull_request
-      branch_patterns:
-        - pattern: main
-          include: true
+    steps:
+      - uses: actions/checkout@v4
 
-    scripts:
-      - name: Build for iOS Simulator
-        script: |
-          xcodebuild build \
-            -project HFPPlayer.xcodeproj \
-            -scheme HFPPlayer \
-            -sdk iphonesimulator \
-            -destination 'generic/platform=iOS Simulator' \
-            -configuration Debug \
-            CODE_SIGNING_ALLOWED=NO \
-            | xcpretty --color && exit ${PIPESTATUS[0]}
+      - name: Select Xcode
+        run: sudo xcode-select -s /Applications/Xcode_15.4.app
 
-  ios-build-ipa:
-    name: HFPPlayer – Build Unsigned IPA
-    max_build_duration: 60
-    instance_type: mac_mini_m2
-
-    environment:
-      xcode: latest
-
-    scripts:
-      - name: Build unsigned
-        script: |
+      - name: Build iOS archive
+        run: |
           xcodebuild \
             -project HFPPlayer.xcodeproj \
             -scheme HFPPlayer \
-            -sdk iphoneos \
             -configuration Release \
-            -destination 'generic/platform=iOS' \
-            -derivedDataPath $CM_BUILD_DIR/derived \
+            -sdk iphoneos \
+            -archivePath $RUNNER_TEMP/HFPPlayer.xcarchive \
+            archive \
             CODE_SIGN_IDENTITY="" \
-            CODE_SIGNING_REQUIRED=NO \
             CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
             DEVELOPMENT_TEAM="" \
-            build
+            IPHONEOS_DEPLOYMENT_TARGET=15.0
 
       - name: Package IPA
-        script: |
-          APP=$(find $CM_BUILD_DIR/derived -name "HFPPlayer.app" \
-            -path "*Release-iphoneos*" | head -1)
-          [ -z "$APP" ] && APP=$(find $CM_BUILD_DIR/derived \
-            -name "*.app" -path "*iphoneos*" | head -1)
-          echo "App found: $APP"
-          mkdir -p $CM_BUILD_DIR/Payload
-          cp -r "$APP" $CM_BUILD_DIR/Payload/HFPPlayer.app
-          cd $CM_BUILD_DIR
-          zip -r HFPPlayer.ipa Payload
+        run: |
+          APP=$(find $RUNNER_TEMP/HFPPlayer.xcarchive -name "*.app" | head -1)
+          echo "App: $APP"
+          mkdir -p $RUNNER_TEMP/Payload
+          cp -r "$APP" $RUNNER_TEMP/Payload/HFPPlayer.app
+          cd $RUNNER_TEMP
+          zip -r HFPPlayer.ipa Payload/
           ls -lh HFPPlayer.ipa
 
-    artifacts:
-      - $CM_BUILD_DIR/HFPPlayer.ipa
-
-    publishing:
-      email:
-        recipients:
-          - ahmad.yns@hotmail.com
-        notify:
-          success: true
-          failure: true
+      - name: Upload IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: HFPPlayer-IPA
+          path: ${{ runner.temp }}/HFPPlayer.ipa
+          retention-days: 7
