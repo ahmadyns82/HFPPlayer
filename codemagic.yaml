@@ -15,17 +15,9 @@ workflows:
       branch_patterns:
         - pattern: main
           include: true
-        - pattern: develop
-          include: true
 
     scripts:
-      - name: Show available simulators
-        script: |
-          xcodebuild -version
-          echo "Available iOS Simulators:"
-          xcrun simctl list devices available | grep -i iphone
-
-      - name: Build for iOS Simulator (no signing)
+      - name: Build for iOS Simulator
         script: |
           xcodebuild build \
             -project HFPPlayer.xcodeproj \
@@ -33,104 +25,18 @@ workflows:
             -sdk iphonesimulator \
             -destination 'generic/platform=iOS Simulator' \
             -configuration Debug \
-            IPHONEOS_DEPLOYMENT_TARGET=15.0 \
             CODE_SIGNING_ALLOWED=NO \
-            CODE_SIGN_IDENTITY="" \
-            SWIFT_TREAT_WARNINGS_AS_ERRORS=NO \
             | xcpretty --color && exit ${PIPESTATUS[0]}
 
-    artifacts:
-      - /tmp/xcodebuild_logs/*.log
-
-  ios-adhoc:
-    name: HFPPlayer – Ad Hoc IPA
+  ios-build-ipa:
+    name: HFPPlayer – Build Unsigned IPA
     max_build_duration: 60
     instance_type: mac_mini_m2
 
     environment:
-      ios_signing:
-        distribution_type: development
-        bundle_identifier: com.hfpplayer.app
-      vars:
-        BUNDLE_ID: com.hfpplayer.app
       xcode: latest
 
-    triggering:
-      events:
-        - push
-      branch_patterns:
-        - pattern: main
-          include: true
-
     scripts:
-      - name: Archive
+      - name: Show repo structure
         script: |
-          xcodebuild archive \
-            -project HFPPlayer.xcodeproj \
-            -scheme HFPPlayer \
-            -sdk iphoneos \
-            -configuration Release \
-            -archivePath build/HFPPlayer.xcarchive \
-            IPHONEOS_DEPLOYMENT_TARGET=15.0 \
-            PRODUCT_BUNDLE_IDENTIFIER="$BUNDLE_ID"
-
-      - name: Export IPA
-        script: |
-          xcodebuild -exportArchive \
-            -archivePath build/HFPPlayer.xcarchive \
-            -exportOptionsPlist ExportOptions.plist \
-            -exportPath build/ipa
-
-    artifacts:
-      - build/ipa/*.ipa
-      - build/HFPPlayer.xcarchive
-
-  ios-appstore:
-    name: HFPPlayer – App Store / TestFlight
-    max_build_duration: 60
-    instance_type: mac_mini_m2
-
-    environment:
-      ios_signing:
-        distribution_type: app_store
-        bundle_identifier: com.hfpplayer.app
-      vars:
-        BUNDLE_ID: com.hfpplayer.app
-      xcode: latest
-
-    triggering:
-      events:
-        - tag
-      tag_patterns:
-        - pattern: 'v*'
-          include: true
-
-    scripts:
-      - name: Archive
-        script: |
-          xcodebuild archive \
-            -project HFPPlayer.xcodeproj \
-            -scheme HFPPlayer \
-            -sdk iphoneos \
-            -configuration Release \
-            -archivePath build/HFPPlayer.xcarchive \
-            IPHONEOS_DEPLOYMENT_TARGET=15.0 \
-            PRODUCT_BUNDLE_IDENTIFIER="$BUNDLE_ID"
-
-      - name: Export IPA
-        script: |
-          xcodebuild -exportArchive \
-            -archivePath build/HFPPlayer.xcarchive \
-            -exportOptionsPlist ExportOptions.plist \
-            -exportPath build/ipa
-
-    artifacts:
-      - build/ipa/*.ipa
-
-    publishing:
-      app_store_connect:
-        api_key: $APP_STORE_CONNECT_PRIVATE_KEY
-        key_id: $APP_STORE_CONNECT_KEY_IDENTIFIER
-        issuer_id: $APP_STORE_CONNECT_ISSUER_ID
-        submit_to_testflight: true
-        submit_to_app_store: false
+          find . -not -p
