@@ -1,86 +1,77 @@
-name: Build IPA
+workflows:
 
-on:
-  push:
-    branches: [ main ]
-  workflow_dispatch:
+  ios-simulator-build:
+    name: HFPPlayer – Simulator Build (no signing)
+    max_build_duration: 30
+    instance_type: mac_mini_m2
 
-jobs:
-  build:
-    runs-on: macos-14
+    environment:
+      xcode: latest
 
-    steps:
-      - uses: actions/checkout@v4
+    triggering:
+      events:
+        - push
+        - pull_request
+      branch_patterns:
+        - pattern: main
+          include: true
 
-      - name: Select Xcode
-        run: sudo xcode-select -s /Applications/Xcode_15.4.app
-
-      - name: Create self-signed certificate
-        run: |
-          # Create a self-signed cert for signing
-          openssl req -x509 -newkey rsa:2048 -keyout key.pem -out cert.pem \
-            -days 365 -nodes \
-            -subj "/CN=HFPPlayer/O=HFPPlayer/C=US"
-
-          # Convert to p12
-          openssl pkcs12 -export \
-            -inkey key.pem \
-            -in cert.pem \
-            -out cert.p12 \
-            -passout pass:password123 \
-            -name "HFPPlayer"
-
-          # Create keychain
-          security create-keychain -p password123 build.keychain
-          security default-keychain -s build.keychain
-          security unlock-keychain -p password123 build.keychain
-          security import cert.p12 \
-            -k build.keychain \
-            -P password123 \
-            -T /usr/bin/codesign
-          security set-key-partition-list \
-            -S apple-tool:,apple: \
-            -s -k password123 build.keychain
-
-      - name: Build for simulator (verify code compiles)
-        run: |
+    scripts:
+      - name: Build for iOS Simulator
+        script: |
           xcodebuild build \
             -project HFPPlayer.xcodeproj \
             -scheme HFPPlayer \
             -sdk iphonesimulator \
             -destination 'generic/platform=iOS Simulator' \
-            -configuration Release \
+            -configuration Debug \
             CODE_SIGNING_ALLOWED=NO \
-            | xcpretty || true
+            | xcpretty --color && exit ${PIPESTATUS[0]}
 
-      - name: Archive
-        run: |
-          xcodebuild archive \
+  ios-build-ipa:
+    name: HFPPlayer – Build Unsigned IPA
+    max_build_duration: 60
+    instance_type: mac_mini_m2
+
+    environment:
+      xcode: latest
+
+    scripts:
+      - name: Build unsigned
+        script: |
+          xcodebuild \
             -project HFPPlayer.xcodeproj \
             -scheme HFPPlayer \
             -sdk iphoneos \
             -configuration Release \
-            -archivePath $PWD/build/HFPPlayer.xcarchive \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath $CM_BUILD_DIR/derived \
             CODE_SIGN_IDENTITY="" \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGNING_ALLOWED=NO \
-            | xcpretty
+            DEVELOPMENT_TEAM="" \
+            build
 
-      - name: Export unsigned IPA
-        run: |
-          mkdir -p build/ipa
-          cp -r build/HFPPlayer.xcarchive/Products/Applications/HFPPlayer.app \
-            build/ipa/HFPPlayer.app
-          cd build/ipa
-          mkdir Payload
-          cp -r HFPPlayer.app Payload/
-          zip -r HFPPlayer.ipa Payload/
-          echo "IPA created!"
+      - name: Package IPA
+        script: |
+          APP=$(find $CM_BUILD_DIR/derived -name "HFPPlayer.app" \
+            -path "*Release-iphoneos*" | head -1)
+          [ -z "$APP" ] && APP=$(find $CM_BUILD_DIR/derived \
+            -name "*.app" -path "*iphoneos*" | head -1)
+          echo "App found: $APP"
+          mkdir -p $CM_BUILD_DIR/Payload
+          cp -r "$APP" $CM_BUILD_DIR/Payload/HFPPlayer.app
+          cd $CM_BUILD_DIR
+          zip -r HFPPlayer.ipa Payload
           ls -lh HFPPlayer.ipa
 
-      - name: Upload IPA as artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: HFPPlayer-IPA
-          path: build/ipa/HFPPlayer.ipa
-          retention-days: 7
+    artifacts:
+      - $CM_BUILD_DIR/HFPPlayer.ipa
+
+    publishing:
+      email:
+        recipients:
+          - ahmad.yns@hotmail.com
+        notify:
+          success: true
+          failure: true
