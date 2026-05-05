@@ -49,7 +49,7 @@ workflows:
 
     environment:
       ios_signing:
-        distribution_type: ad_hoc
+        distribution_type: development
         bundle_identifier: com.hfpplayer.app
       vars:
         BUNDLE_ID: com.hfpplayer.app
