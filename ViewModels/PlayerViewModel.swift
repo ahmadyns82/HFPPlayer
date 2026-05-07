@@ -54,8 +54,15 @@ final class PlayerViewModel: ObservableObject {
             newPlayer.delegate      = PlayerDelegate.shared
             newPlayer.enableRate    = true
             newPlayer.prepareToPlay()
-            newPlayer.volume        = volume
             newPlayer.numberOfLoops = repeatMode == .one ? -1 : 0
+
+            // Boost volume in HFP mode to compensate for codec quality loss
+            if audioSession.isHFPActive {
+                newPlayer.volume = min(volume * 2.0, 1.0)
+            } else {
+                newPlayer.volume = volume
+            }
+
             player   = newPlayer
             duration = newPlayer.duration
             newPlayer.play()
@@ -73,11 +80,17 @@ final class PlayerViewModel: ObservableObject {
     func togglePlayPause() { if isPlaying { pause() } else { resume() } }
 
     func pause() {
-        player?.pause(); isPlaying = false; stopTimer(); updateNowPlayingInfo()
+        player?.pause()
+        isPlaying = false
+        stopTimer()
+        updateNowPlayingInfo()
     }
 
     func resume() {
-        player?.play(); isPlaying = true; startTimer(); updateNowPlayingInfo()
+        player?.play()
+        isPlaying = true
+        startTimer()
+        updateNowPlayingInfo()
     }
 
     func next() {
@@ -96,7 +109,9 @@ final class PlayerViewModel: ObservableObject {
     }
 
     func seek(to time: TimeInterval) {
-        player?.currentTime = time; currentTime = time; updateNowPlayingInfo()
+        player?.currentTime = time
+        currentTime = time
+        updateNowPlayingInfo()
     }
 
     private func handleSongFinished() {
@@ -136,17 +151,18 @@ final class PlayerViewModel: ObservableObject {
             MPNowPlayingInfoPropertyPlaybackRate:        isPlaying ? 1.0 : 0.0,
         ]
         if let art = song.artwork {
-            info[MPMediaItemPropertyArtwork] = MPMediaItemArtwork(boundsSize: art.size) { _ in art }
+            info[MPMediaItemPropertyArtwork] = MPMediaItemArtwork(
+                boundsSize: art.size) { _ in art }
         }
         MPNowPlayingInfoCenter.default().nowPlayingInfo = info
     }
 
     func setupRemoteControls() {
         let rc = MPRemoteCommandCenter.shared()
-        rc.playCommand.addTarget          { [weak self] _ in self?.resume();   return .success }
-        rc.pauseCommand.addTarget         { [weak self] _ in self?.pause();    return .success }
-        rc.nextTrackCommand.addTarget     { [weak self] _ in self?.next();     return .success }
-        rc.previousTrackCommand.addTarget { [weak self] _ in self?.previous(); return .success }
+        rc.playCommand.addTarget            { [weak self] _ in self?.resume();   return .success }
+        rc.pauseCommand.addTarget           { [weak self] _ in self?.pause();    return .success }
+        rc.nextTrackCommand.addTarget       { [weak self] _ in self?.next();     return .success }
+        rc.previousTrackCommand.addTarget   { [weak self] _ in self?.previous(); return .success }
         rc.changePlaybackPositionCommand.addTarget { [weak self] event in
             guard let e = event as? MPChangePlaybackPositionCommandEvent else { return .commandFailed }
             self?.seek(to: e.positionTime); return .success
